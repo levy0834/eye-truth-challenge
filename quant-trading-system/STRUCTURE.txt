@@ -1,0 +1,65 @@
+quant-trading-system/
+├── config/
+│   ├── __init__.py
+│   ├── settings.yaml
+│   └── strategies.yaml
+├── data/
+│   ├── __init__.py
+│   ├── raw/
+│   │   ├── akshare/
+│   │   ├── yfinance/
+│   │   └── crypto/
+│   ├── processed/
+│   └── cache/
+├── src/
+│   ├── __init__.py
+│   ├── data/
+│   │   ├── __init__.py
+│   │   ├── fetchers.py
+│   │   ├── akshare_fetcher.py
+│   │   ├── yfinance_fetcher.py
+│   │   ├── ccxt_fetcher.py
+│   │   ├── cleaner.py
+│   │   └── features.py
+│   ├── strategies/
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── ma_cross.py
+│   │   ├── macd_cross.py
+│   │   ├── rsi_extreme.py
+│   │   ├── bollinger.py
+│   │   └── confluence.py
+│   ├── backtest/
+│   │   ├── __init__.py
+│   │   ├── engine.py
+│   │   ├── broker.py
+│   │   ├── metrics.py
+│   │   └── visualizer.py
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   ├── logger.py
+│   │   └── config_loader.py
+│   └── main.py
+├── tests/
+│   ├── __init__.py
+│   ├── test_fetchers.py
+│   ├── test_strategies.py
+│   └── test_backtest.py
+├── notebooks/
+│   └── exploratory_analysis.ipynb
+├── docs/
+│   ├── architecture.md
+│   ├── api.md
+│   └── deployment.md
+├── scripts/
+│   ├── fetch_data.sh
+│   ├── run_backtest.sh
+│   ├── deploy_cron.sh
+│   └── export_results.sh
+├── .env.example
+├── .gitignore
+├── requirements.txt
+├── README.md
+├── pyproject.toml
+├── LICENSE
+└── CHANGELOG.md

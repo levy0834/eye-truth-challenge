@@ -1,0 +1,42 @@
+# 优化版配置
+# 调整风控参数以提升策略表现
+
+backtest:
+  commission_rate: 0.0003    # 交易佣金 0.03%
+  initial_capital: 100000.0  # 初始资金
+  slippage: 0.001           # 滑点 0.1%
+  stamp_tax_rate: 0.001     # 印花税 0.1%
+
+# 优化后的风控参数
+risk_control:
+  # 原参数：仓位10%、止损-3%、止盈+8%
+  # 新参数：仓位15%（提高收益 exposure）、止损-5%（减少假止损）、止盈+12%（让利润奔跑）
+  position_size: 0.15      # 单次仓位 15% (原10%)
+  stop_loss: -0.05         # 止损线 -5% (原-3%)
+  take_profit: 0.12        # 止盈线 +12% (原+8%)
+  max_drawdown: -0.25      # 最大回撤停损 -25% (原-20%，更宽松)
+  max_positions: 3         # 同时持仓不超过3只 (降低风险)
+
+# 数据源
+data_sources:
+  a_share:
+    - akshare
+    - yfinance
+    - mock
+  crypto:
+    - ccxt
+    - mock
+  us_etf:
+    - yfinance
+    - mock
+
+# 时间范围
+date_range:
+  start: '2006-01-01'
+  end: '2025-12-31'
+
+# 默认标的
+default_symbol: 510300.SH
+
+# 默认策略
+default_strategy: ma_cross

@@ -1,0 +1,5 @@
+data/raw/akshare/.gitkeep
+data/raw/yfinance/.gitkeep
+data/raw/crypto/.gitkeep
+data/processed/.gitkeep
+data/cache/.gitkeep

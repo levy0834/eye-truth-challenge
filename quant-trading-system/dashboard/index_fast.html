@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>沪深300策略回测分析看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+        body { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); min-height: 100vh; margin: 0; }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .data-table { overflow-x: auto; font-size: 13px; }
+        .data-table th { 
+            background: rgba(99, 102, 241, 0.2); 
+            color: #a5b4fc; 
+            font-weight: 600; 
+            padding: 10px 12px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .data-table td { 
+            padding: 8px 12px; 
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .data-table tr:hover { background: rgba(99, 102, 241, 0.05); }
+        
+        /* 虚拟滚动容器 */
+        .virtual-scroll {
+            height: 500px;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .return-pos { color: #10b981; }
+        .return-neg { color: #ef4444; }
+        
+        /* 加载状态 */
+        .loading { text-align: center; padding: 40px; color: #a5b4fc; }
+    </style>
+</head>
+<body class="text-gray-100">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <header class="mb-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                        量化策略分析看板
+                    </h1>
+                    <p class="text-gray-400 mt-1 text-sm">沪深300成分股回测结果 · 实时渲染</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-xs border border-indigo-500/30" id="status">
+                        加载中...
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- KPI 卡片 -->
+        <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="glass-card p-4">
+                <div class="text-gray-400 text-xs mb-1">回测总数</div>
+                <div class="text-2xl font-bold text-white" id="total-backtests">--</div>
+            </div>
+            <div class="glass-card p-4">
+                <div class="text-gray-400 text-xs mb-1">覆盖股票</div>
+                <div class="text-2xl font-bold text-indigo-400" id="stock-count">--</div>
+            </div>
+            <div class="glass-card p-4">
+                <div class="text-gray-400 text-xs mb-1">最佳策略</div>
+                <div class="text-lg font-bold text-green-400" id="best-strategy">--</div>
+            </div>
+            <div class="glass-card p-4">
+                <div class="text-gray-400 text-xs mb-1">最优收益</div>
+                <div class="text-2xl font-bold text-emerald-400" id="best-return">--</div>
+            </div>
+        </section>
+
+        <!-- 策略汇总 -->
+        <section class="mb-8">
+            <h2 class="text-lg font-bold mb-4 flex items-center">
+                <span class="w-1.5 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded mr-2"></span>
+                策略表现排名
+            </h2>
+            <div class="glass-card p-4 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr>
+                            <th class="text-left py-2">策略</th>
+                            <th class="text-right py-2">平均收益%</th>
+                            <th class="text-right py-2">最大回撤%</th>
+                            <th class="text-right py-2">夏普</th>
+                            <th class="text-right py-2">样本数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="strategy-summary-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 详细数据 + 图表 -->
+        <section class="mb-8">
+            <div class="flex flex-col lg:flex-row gap-6">
+                <!-- 左侧：详细表格（虚拟滚动） -->
+                <div class="lg:w-3/5">
+                    <h2 class="text-lg font-bold mb-4 flex items-center">
+                        <span class="w-1.5 h-6 bg-gradient-to-b from-pink-500 to-rose-500 rounded mr-2"></span>
+                        详细回测结果
+                    </h2>
+                    <div class="glass-card p-4">
+                        <div class="mb-3 flex gap-2 flex-wrap">
+                            <select id="filter-strategy" class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                <option value="all">全部策略</option>
+                                <option value="MACrossStrategy">MA均线</option>
+                                <option value="MACDCrossStrategy">MACD</option>
+                                <option value="RSIStrategy">RSI</option>
+                                <option value="BollingerStrategy">布林带</option>
+                                <option value="TAConfluenceStrategy">多因子</option>
+                            </select>
+                            <select id="sort-by" class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                <option value="test_return_pct">按收益排序</option>
+                                <option value="test_sharpe">按夏普排序</option>
+                                <option value="test_maxdd_pct">按回撤排序</option>
+                            </select>
+                        </div>
+                        <div class="virtual-scroll border border-gray-700 rounded-lg overflow-hidden">
+                            <table class="w-full data-table">
+                                <thead>
+                                    <tr>
+                                        <th class="text-left w-24 cursor-pointer" onclick="sortData('symbol')">股票⇅</th>
+                                        <th class="text-left w-20 cursor-pointer" onclick="sortData('strategy')">策略⇅</th>
+                                        <th class="text-right w-16 cursor-pointer text-green-400" onclick="sortData('test_return_pct')">收益%⇅</th>
+                                        <th class="text-right w-14 cursor-pointer" onclick="sortData('test_sharpe')">夏普⇅</th>
+                                        <th class="text-right w-16 text-red-400">回撤%</th>
+                                        <th class="text-right w-12">交易</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detailed-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500 text-right" id="record-count"></div>
+                    </div>
+                </div>
+
+                <!-- 右侧：图表 -->
+                <div class="lg:w-2/5 space-y-6">
+                    <!-- 收益分布 -->
+                    <div class="glass-card p-4">
+                        <h3 class="text-sm font-bold mb-3 text-gray-300">收益分布</h3>
+                        <canvas id="dist-chart" height="200"></canvas>
+                    </div>
+                    
+                    <!-- 策略雷达 -->
+                    <div class="glass-card p-4">
+                        <h3 class="text-sm font-bold mb-3 text-gray-300">策略对比</h3>
+                        <canvas id="radar-chart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Top 10 -->
+        <section class="mb-8">
+            <h2 class="text-lg font-bold mb-4 flex items-center">
+                <span class="w-1.5 h-6 bg-gradient-to-b from-rose-500 to-pink-500 rounded mr-2"></span>
+                Top 10 表现最佳
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3" id="top10-grid"></div>
+        </section>
+
+        <footer class="text-gray-500 text-xs text-center py-4 border-t border-gray-800">
+            <p>数据更新: <span id="更新时间"></span> · 版本: v2.1-fast</p>
+        </footer>
+    </div>
+
+    <script>
+        const strategyColors = {
+            'MACrossStrategy': '#3b82f6',
+            'MACDCrossStrategy': '#10b981',
+            'RSIStrategy': '#f59e0b',
+            'BollingerStrategy': '#ef4444',
+            'TAConfluenceStrategy': '#8b5cf6'
+        };
+        
+        const strategyNames = {
+            'MACrossStrategy': 'MA均线',
+            'MACDCrossStrategy': 'MACD',
+            'RSIStrategy': 'RSI',
+            'BollingerStrategy': '布林带',
+            'TAConfluenceStrategy': '多因子'
+        };
+
+        let allData = [];
+        let summaryData = [];
+        let filteredData = [];
+        let charts = {};
+
+        // 快速CSV解析（无引号）
+        function fastParseCSV(text) {
+            const t0 = performance.now();
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            const result = [];
+            const len = headers.length;
+            
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length < len) continue;
+                
+                const obj = {};
+                for (let j = 0; j < len; j++) {
+                    let val = cols[j].trim();
+                    if (val && !isNaN(val) && val !== '-' && val !== '') {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) val = num;
+                    }
+                    obj[headers[j]] = val;
+                }
+                if (obj.symbol) result.push(obj);
+            }
+            
+            console.log(`CSV解析完成: ${result.length}行, ${(performance.now() - t0).toFixed(1)}ms`);
+            return result;
+        }
+
+        async function loadData() {
+            const status = document.getElementById('status');
+            status.textContent = '加载中...';
+            
+            try {
+                const t0 = performance.now();
+                const [d1, d2] = await Promise.all([
+                    fetch('../results/hs300_full/partial_results.csv'),
+                    fetch('../results/hs300_full/strategy_summary.csv')
+                ]);
+                
+                if (!d1.ok || !d2.ok) throw new Error('文件不存在或无法访问');
+                
+                const [txt1, txt2] = await Promise.all([d1.text(), d2.text()]);
+                allData = fastParseCSV(txt1);
+                summaryData = fastParseCSV(txt2);
+                
+                console.log(`总耗时: ${(performance.now() - t0).toFixed(1)}ms`);
+                
+                updateKPI();
+                renderSummary();
+                applyFilterSort();
+                renderCharts();
+                renderTop10();
+                
+                status.textContent = `✅ 就绪 (${allData.length}条)`;
+                document.getElementById('更新时间').textContent = new Date().toLocaleString('zh-CN');
+                
+            } catch (e) {
+                console.error(e);
+                status.textContent = '❌ 加载失败';
+                alert('数据加载失败，请检查文件路径');
+            }
+        }
+
+        function updateKPI() {
+            const uniqueStocks = new Set(allData.map(d => d.symbol)).size;
+            document.getElementById('total-backtests').textContent = allData.length.toLocaleString();
+            document.getElementById('stock-count').textContent = uniqueStocks;
+            if (summaryData[0]) {
+                document.getElementById('best-strategy').textContent = strategyNames[summaryData[0].strategy] || summaryData[0].strategy;
+                document.getElementById('best-return').textContent = parseFloat(summaryData[0].avg_return).toFixed(2) + '%';
+            }
+        }
+
+        function renderSummary() {
+            const tbody = document.getElementById('strategy-summary-body');
+            tbody.innerHTML = summaryData.map(s => `
+                <tr class="border-b border-gray-800">
+                    <td class="py-2" style="color:${strategyColors[s.strategy]}">${strategyNames[s.strategy]||s.strategy}</td>
+                    <td class="text-right ${s.avg_return>=0?'text-green-400':'text-red-400'}">${parseFloat(s.avg_return).toFixed(2)}%</td>
+                    <td class="text-right text-red-400">${parseFloat(s.avg_maxdd).toFixed(2)}%</td>
+                    <td class="text-right ${s.avg_sharpe>=0?'text-green-400':'text-red-400'}">${parseFloat(s.avg_sharpe).toFixed(2)}</td>
+                    <td class="text-right text-gray-500">${s.stock_count}</td>
+                </tr>
+            `).join('');
+        }
+
+        function applyFilterSort() {
+            const filter = document.getElementById('filter-strategy').value;
+            const sortBy = document.getElementById('sort-by').value;
+            
+            filteredData = allData.filter(d => filter === 'all' || d.strategy === filter);
+            filteredData.sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
+            
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('detailed-body');
+            const fragment = document.createDocumentFragment();
+            const maxRows = 200; // 限制渲染行数
+            
+            filteredData.slice(0, maxRows).forEach(d => {
+                const ret = parseFloat(d.test_return_pct) || 0;
+                const color = ret >= 0 ? 'text-green-400' : 'text-red-400';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="py-2 text-gray-300">${d.symbol}</td>
+                    <td class="text-sm" style="color:${strategyColors[d.strategy]}">${strategyNames[d.strategy]||d.strategy}</td>
+                    <td class="text-right font-bold ${color}">${ret.toFixed(2)}%</td>
+                    <td class="text-right text-gray-400">${parseFloat(d.test_sharpe||0).toFixed(2)}</td>
+                    <td class="text-right text-red-400">${parseFloat(d.test_maxdd_pct||0).toFixed(2)}%</td>
+                    <td class="text-right text-gray-500">${d.test_trades||0}</td>
+                `;
+                fragment.appendChild(tr);
+            });
+            
+            tbody.innerHTML = '';
+            tbody.appendChild(fragment);
+            document.getElementById('record-count').textContent = `显示 ${Math.min(filteredData.length, maxRows)} / ${filteredData.length} 条`;
+        }
+
+        function sortData(field) {
+            document.getElementById('sort-by').value = field;
+            applyFilterSort();
+        }
+
+        function renderCharts() {
+            // 销毁旧图表
+            if (charts.dist) charts.dist.destroy();
+            if (charts.radar) charts.radar.destroy();
+            
+            // 收益分布
+            const bins = { '<-5%':0, '-5%~0%':0, '0%~5%':0, '5%~10%':0, '10%~15%':0, '>15%':0 };
+            allData.forEach(d => {
+                const r = parseFloat(d.test_return_pct) || 0;
+                if (r < -5) bins['<-5%']++;
+                else if (r < 0) bins['-5%~0%']++;
+                else if (r < 5) bins['0%~5%']++;
+                else if (r < 10) bins['5%~10%']++;
+                else if (r < 15) bins['10%~15%']++;
+                else bins['>15%']++;
+            });
+            
+            charts.dist = new Chart(document.getElementById('dist-chart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(bins),
+                    datasets: [{
+                        label: '策略数量',
+                        data: Object.values(bins),
+                        backgroundColor: 'rgba(139, 92, 246, 0.6)',
+                        borderColor: 'rgba(139, 92, 246, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#9ca3af' }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // 雷达图
+            const ctx = document.getElementById('radar-chart');
+            if (ctx) {
+                charts.radar = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: ['收益', '稳定性', '风控', '覆盖率'],
+                        datasets: summaryData.map(s => ({
+                            label: strategyNames[s.strategy],
+                            data: [
+                                Math.min(parseFloat(s.avg_return)/20 + 0.5, 1),
+                                Math.max(0.3 - parseFloat(s.std_return)/20, 0),
+                                Math.min(1 - Math.abs(parseFloat(s.avg_maxdd))/20, 1),
+                                Math.min(parseFloat(s.stock_count)/100, 1)
+                            ],
+                            backgroundColor: `${strategyColors[s.strategy]}33`,
+                            borderColor: strategyColors[s.strategy],
+                            borderWidth: 1.5,
+                            pointRadius: 3
+                        }))
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { 
+                            legend: { position: 'bottom', labels: { color: '#a5b4fc', boxWidth: 10, font: { size: 10 } } }
+                        },
+                        scales: {
+                            r: { 
+                                beginAtZero: true, 
+                                max: 1,
+                                ticks: { display: false },
+                                grid: { color: 'rgba(255,255,255,0.1)' },
+                                pointLabels: { color: '#9ca3af', font: { size: 10 } }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderTop10() {
+            const top10 = [...allData].sort((a, b) => b.test_return_pct - a.test_return_pct).slice(0, 10);
+            const grid = document.getElementById('top10-grid');
+            grid.innerHTML = top10.map((d, i) => `
+                <div class="glass-card p-3 hover:bg-white/5 transition">
+                    <div class="text-xs text-gray-400 mb-1">#${i+1} ${d.symbol}</div>
+                    <div class="text-xs mb-1" style="color:${strategyColors[d.strategy]}">${strategyNames[d.strategy]||d.strategy}</div>
+                    <div class="text-xl font-bold ${d.test_return_pct>=0?'text-green-400':'text-red-400'}">${parseFloat(d.test_return_pct).toFixed(2)}%</div>
+                </div>
+            `).join('');
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('filter-strategy').addEventListener('change', applyFilterSort);
+            document.getElementById('sort-by').addEventListener('change', applyFilterSort);
+            loadData();
+        });
+    </script>
+</body>
+</html>

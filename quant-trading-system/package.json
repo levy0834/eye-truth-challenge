@@ -1,0 +1,20 @@
+{
+  "name": "quant-trading-system",
+  "version": "1.0.0",
+  "description": "一个基于 Python 的多市场量化交易研究框架，支持 A股ETF、美股ETF 和 加密货币 的历史数据获取、策略回测与绩效评估。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer-core": "^24.38.0"
+  }
+}

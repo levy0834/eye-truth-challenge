@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "type": "skill",
+  "name": "a-share-trader",
+  "displayName": "A股自动交易员",
+  "version": "0.1.0-MVP",
+  "author": " levy",
+  "description": "基于OpenClaw的A股自动交易技能，支持数据抓取、策略计算、模拟交易。",
+  "tags": ["trading", "a-share", "etf", "akshare", "simulation"],
+  "category": "finance"
+}

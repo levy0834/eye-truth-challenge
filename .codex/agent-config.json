@@ -1,0 +1,14 @@
+{
+  "agentId": "codex-acp",
+  "runtime": "acp",
+  "mode": "run",
+  "model": "gpt-5.3-codex-xhigh",
+  "capabilities": ["codegen"],
+  "system_prompt": "You are an expert software engineer. Write clean, production-ready code with tests and documentation.",
+  "timeoutSeconds": 300,
+  "provider": {
+    "type": "openai",
+    "base_url": "https://ai.shares.indevs.in/v1",
+    "api_key_env": "CODEX_API_KEY"
+  }
+}
