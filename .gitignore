@@ -1,0 +1,64 @@
+# OpenClaw Workspace Gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Credentials & Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets/
+
+# Data & Logs (exclude large data files, keep structure)
+projects/**/data/raw/*.csv
+projects/**/results/*.csv
+projects/**/results/*.png
+dashboard/*.csv
+dashboard/*.json
+logs/*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OpenClaw specific
+.openclaw/credentials/
+.openclaw/logs/*.log
+.openclaw/restart-sentinel.json
+.openclaw/seafood-lock.json
+.openclaw/exec-approvals.json
