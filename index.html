@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>眼力试炼：真假识破</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 开始界面 -->
+    <div id="start-screen" class="screen active">
+      <div class="title">眼力试炼<br><span class="subtitle">真假识破</span></div>
+      <p class="intro">在有限信用点下，找出两张相似图片中的假图。<br>考验你的眼力与决策！</p>
+      <div class="rules">
+        <p>📌 规则：</p>
+        <ul>
+          <li>10点信用点，每回合消耗1点</li>
+          <li>正确 +100分，错误 -50分</li>
+          <li>1.5秒内作答额外 +50速度分</li>
+          <li>信用点用完，游戏结束</li>
+        </ul>
+      </div>
+      <button id="start-btn" class="btn primary">开始挑战</button>
+    </div>
+
+    <!-- 游戏界面 -->
+    <div id="game-screen" class="screen">
+      <div class="hud">
+        <div class="hud-item">信用点: <span id="credits">10</span></div>
+        <div class="hud-item">得分: <span id="score">0</span></div>
+        <div class="hud-item">回合: <span id="round">1/15</span></div>
+      </div>
+
+      <div class="question">
+        <p id="question-text">哪张图是<span class="highlight">假的</span>？</p>
+      </div>
+
+      <div class="images-container">
+        <button class="image-btn" id="img-left">
+          <canvas id="canvas-left" width="300" height="300"></canvas>
+          <div class="label">A</div>
+        </button>
+        <button class="image-btn" id="img-right">
+          <canvas id="canvas-right" width="300" height="300"></canvas>
+          <div class="label">B</div>
+        </button>
+      </div>
+
+      <div class="timer-bar">
+        <div class="timer-progress" id="timer-progress"></div>
+      </div>
+
+      <div class="feedback" id="feedback"></div>
+    </div>
+
+    <!-- 结算界面 -->
+    <div id="result-screen" class="screen">
+      <h2>挑战结束</h2>
+      <div class="result-score">
+        <span class="label">最终得分</span>
+        <span class="value" id="final-score">0</span>
+      </div>
+      <div class="result-stats">
+        <p>正确率: <span id="accuracy">0%</span></p>
+        <p>平均用时: <span id="avg-time">0</span>秒</p>
+        <p>称号: <span id="title" class="title-badge">——</span></p>
+      </div>
+      <div class="share-card">
+        <p>🗣️ 分享战绩</p>
+        <div class="share-text" id="share-text"></div>
+        <button id="copy-btn" class="btn secondary">复制文案</button>
+      </div>
+      <button id="restart-btn" class="btn primary">再玩一次</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
