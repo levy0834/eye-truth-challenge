@@ -1,0 +1,7 @@
+{
+  "name": "multi-search-engine",
+  "engines": [
+    {"name": "Baidu", "url": "https://www.baidu.com/s?wd={keyword}", "region": "cn"},
+    {"name": "Bing CN", "url": "https://cn.bing.com/search?q={keyword}&ensearch=0", "region": "cn"}
+  ]
+}

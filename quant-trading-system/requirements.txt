@@ -1,0 +1,35 @@
+# Python依赖包
+# Python >= 3.9
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0  # Parquet支持
+
+# 数据获取
+yfinance>=0.2.0
+akshare>=1.10.0  # 可选，A股数据
+ccxt>=4.0.0      # 加密货币交易所API
+
+# 技术指标
+ta>=0.10.0       # 技术分析库（TA-Lib的Python替代）
+pandas-ta>=0.3.0
+
+# 回测与可视化
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.14.0
+
+# 配置与工具
+pyyaml>=6.0
+python-dotenv>=1.0.0
+tqdm>=4.65.0     # 进度条
+
+# 日志
+colorlog>=6.7.0
+
+# 开发依赖（可选）
+pytest>=7.4.0
+pytest-cov>=4.1.0
+jupyter>=1.0.0
+ipykernel>=6.25.0

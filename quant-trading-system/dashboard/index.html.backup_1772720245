@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>沪深300策略回测分析看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            min-height: 100vh;
+            margin: 0;
+            color: #e5e7eb;
+        }
+        
+        .glass-card {
+            background: rgba(30, 30, 46, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 12px;
+        }
+        
+        table { border-collapse: separate; border-spacing: 0; }
+        th {
+            background: rgba(99, 102, 241, 0.15);
+            color: #c7d2fe;
+            font-weight: 600;
+            padding: 8px 10px;
+            font-size: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        td {
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            font-size: 12px;
+        }
+        tr:hover { background: rgba(99, 102, 241, 0.08); }
+        
+        .pagination { display: flex; gap: 4px; align-items: center; }
+        .pagination button {
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #e5e7eb;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .pagination button:hover:not(:disabled) { background: rgba(99, 102, 241, 0.4); }
+        .pagination button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .pagination .page-info { color: #9ca3af; font-size: 12px; }
+        
+        .loading-bar {
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            animation: loading 2s infinite;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+        }
+        @keyframes loading { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+    </style>
+</head>
+<body>
+    <div class="loading-bar" id="loading-bar"></div>
+    
+    <div class="container mx-auto px-3 py-6 max-w-7xl">
+        <header class="mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                        量化策略分析看板
+                    </h1>
+                    <p class="text-gray-500 text-xs mt-1">数据来源: 沪深300成分股回测结果</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs border border-blue-500/30" id="status">初始化...</span>
+                    <button onclick="loadData()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 rounded text-xs transition">刷新</button>
+                </div>
+            </div>
+        </header>
+
+        <section class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <div class="glass-card p-3">
+                <div class="text-gray-500 text-xs">回测总数</div>
+                <div class="text-xl font-bold text-white" id="total-count">--</div>
+            </div>
+            <div class="glass-card p-3">
+                <div class="text-gray-500 text-xs">覆盖股票</div>
+                <div class="text-xl font-bold text-blue-400" id="stock-count">--</div>
+            </div>
+            <div class="glass-card p-3">
+                <div class="text-gray-500 text-xs">最佳策略</div>
+                <div class="text-base font-bold text-green-400" id="best-strategy">--</div>
+            </div>
+            <div class="glass-card p-3">
+                <div class="text-gray-500 text-xs">最优收益</div>
+                <div class="text-xl font-bold text-emerald-400" id="best-return">--</div>
+            </div>
+        </section>
+
+        <section class="mb-6">
+            <h2 class="text-base font-bold mb-3 flex items-center">
+                <span class="w-1 h-5 bg-blue-500 rounded mr-2"></span>
+                策略排名
+            </h2>
+            <div class="glass-card p-3 overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr>
+                            <th class="text-left py-2">策略</th>
+                            <th class="text-right py-2">平均收益%</th>
+                            <th class="text-right py-2">最大回撤%</th>
+                            <th class="text-right py-2">夏普</th>
+                            <th class="text-right py-2">样本数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summary-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="mb-6">
+            <div class="flex flex-col lg:flex-row gap-4">
+                <div class="lg:w-3/5">
+                    <h2 class="text-base font-bold mb-3 flex items-center">
+                        <span class="w-1 h-5 bg-pink-500 rounded mr-2"></span>
+                        详细结果
+                    </h2>
+                    <div class="glass-card p-3">
+                        <div class="mb-3 flex flex-wrap gap-2 items-center">
+                            <select id="filter-strategy" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                                <option value="all">全部策略</option>
+                                <option value="MACrossStrategy">MA均线</option>
+                                <option value="MACDCrossStrategy">MACD</option>
+                                <option value="RSIStrategy">RSI</option>
+                                <option value="BollingerStrategy">布林带</option>
+                                <option value="TAConfluenceStrategy">多因子</option>
+                            </select>
+                            <select id="page-size" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+                                <option value="20">20条/页</option>
+                                <option value="50" selected>50条/页</option>
+                                <option value="100">100条/页</option>
+                            </select>
+                            <div class="pagination ml-auto">
+                                <button id="prev-page" disabled>上一页</button>
+                                <span class="page-info">
+                                    第 <input type="number" id="page-num" min="1" value="1" class="w-10 bg-gray-800 border border-gray-700 rounded px-1 text-center text-xs"> 页
+                                    / <span id="total-pages">1</span>
+                                </span>
+                                <button id="next-page" disabled>下一页</button>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto border border-gray-800 rounded" style="max-height: 450px; overflow-y: auto;">
+                            <table class="w-full">
+                                <thead>
+                                    <tr>
+                                        <th class="text-left w-20 cursor-pointer" onclick="sortBy('symbol')">股票⇅</th>
+                                        <th class="text-left w-16 cursor-pointer" onclick="sortBy('strategy')">策略⇅</th>
+                                        <th class="text-right w-14 cursor-pointer text-green-400" onclick="sortBy('total_return')">收益%⇅</th>
+                                        <th class="text-right w-12 cursor-pointer" onclick="sortBy('sharpe_ratio')">夏普⇅</th>
+                                        <th class="text-right w-14 text-red-400">最大回撤%</th>
+                                        <th class="text-right w-12">交易次数</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500 text-right" id="table-info"></div>
+                    </div>
+                </div>
+
+                <div class="lg:w-2/5 space-y-4">
+                    <div class="glass-card p-3">
+                        <h3 class="text-xs font-bold mb-2 text-gray-300">收益分布</h3>
+                        <div class="relative" style="height: 220px;">
+                            <canvas id="dist-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-6">
+            <h2 class="text-base font-bold mb-3 flex items-center">
+                <span class="w-1 h-5 bg-rose-500 rounded mr-2"></span>
+                Top 10 表现最佳
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2" id="top10-grid"></div>
+        </section>
+
+        <footer class="text-gray-600 text-xs text-center py-3 border-t border-gray-800">
+            <p>数据更新时间: <span id="update-time"></span></p>
+        </footer>
+    </div>
+
+    <script>
+        const STRATEGY_NAMES = {
+            'MA Cross': 'MA均线',
+            'MA Double': '双均线',
+            'MA Triple': '三均线',
+            'MACD Cross': 'MACD金叉',
+            'MACD Hist': 'MACD柱状',
+            'RSI Extreme': 'RSI超卖',
+            'MA+RSI Combo': 'MA+RSI组合',
+            'Bollinger Band': '布林带突破',
+            'Bollinger Squeeze': '布林带收缩',
+            'Volume Confirm': '成交量确认',
+            'TA Confluence': 'TAV框架',
+            'TA Strengthened': '强化TAV'
+        };
+
+        const STRATEGY_COLORS = {
+            'MA Cross': '#3b82f6',
+            'MA Double': '#60a5fa',
+            'MA Triple': '#93c5fd',
+            'MACD Cross': '#10b981',
+            'MACD Hist': '#34d399',
+            'RSI Extreme': '#f59e0b',
+            'MA+RSI Combo': '#fbbf24',
+            'Bollinger Band': '#ef4444',
+            'Bollinger Squeeze': '#f87171',
+            'Volume Confirm': '#8b5cf6',
+            'TA Confluence': '#a78bfa',
+            'TA Strengthened': '#c4b5fd'
+        };
+
+        let allData = [];
+        let summaryData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        let pageSize = 50;
+        let sortField = 'test_return_pct';
+        let sortDesc = true;
+
+        function fastParse(text) {
+            const t0 = performance.now();
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            const len = headers.length;
+            const result = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length < 7) continue;
+                
+                const obj = {};
+                for (let j = 0; j < len; j++) {
+                    let val = (cols[j] || '').trim();
+                    if (val && !isNaN(val) && val !== '-' && val !== '') {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) val = num;
+                    }
+                    obj[headers[j]] = val;
+                }
+                if (obj.symbol) result.push(obj);
+            }
+            
+            console.log(`✅ 解析 ${result.length} 行, ${(performance.now() - t0).toFixed(0)}ms`);
+            return result;
+        }
+
+        async function loadData() {
+            const status = document.getElementById('status');
+            document.getElementById('loading-bar').style.display = 'block';
+            status.textContent = '加载中...';
+            
+            try {
+                const t0 = performance.now();
+                let dataUrl = 'partial_results.csv';
+                let summaryUrl = 'strategy_summary.csv';
+                
+                const [d1, d2] = await Promise.all([
+                    fetch(dataUrl),
+                    fetch(summaryUrl)
+                ]);
+                
+                console.log('Data responses:', d1.status, d2.status);
+                
+                if (!d1.ok) {
+                    throw new Error(`数据文件不存在: ${dataUrl} (HTTP ${d1.status})`);
+                }
+                if (!d2.ok) {
+                    console.warn('汇总文件不存在，将仅显示详细数据');
+                }
+                
+                const [txt1, txt2] = await Promise.all([d1.text(), d2.text()]);
+                allData = fastParse(txt1);
+                summaryData = txt2 ? fastParse(txt2) : [];
+                
+                console.log(`📦 总数据: ${allData.length} 条, 汇总: ${summaryData.length} 条`);
+                if (allData.length > 0) console.log('Sample allData[0]:', allData[0]);
+                if (summaryData.length > 0) console.log('Sample summaryData[0]:', summaryData[0]);
+                
+                applyFilter();
+                updateKPI();
+                renderSummary();
+                renderCharts();
+                renderTop10();
+                
+                status.textContent = `✅ 就绪 (${allData.length})`;
+                document.getElementById('update-time').textContent = new Date().toLocaleTimeString('zh-CN');
+                
+            } catch (e) {
+                console.error(e);
+                status.textContent = '❌ 失败';
+                alert('数据加载失败: ' + e.message + '\n请确保partial_results.csv和strategy_summary.csv在dashboard目录下');
+            } finally {
+                setTimeout(() => {
+                    document.getElementById('loading-bar').style.display = 'none';
+                }, 500);
+            }
+        }
+
+        function updateKPI() {
+            const uniqueStocks = new Set(allData.map(d => d.symbol)).size;
+            document.getElementById('total-count').textContent = allData.length.toLocaleString();
+            document.getElementById('stock-count').textContent = uniqueStocks;
+            if (summaryData[0]) {
+                document.getElementById('best-strategy').textContent = STRATEGY_NAMES[summaryData[0].strategy] || summaryData[0].strategy;
+                document.getElementById('best-return').textContent = parseFloat(summaryData[0].avg_return).toFixed(2) + '%';
+            }
+        }
+
+        function renderSummary() {
+            const tbody = document.getElementById('summary-body');
+            if (!summaryData || summaryData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">暂无汇总数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = summaryData.map(s => `
+                <tr class="border-b border-gray-800">
+                    <td class="py-2" style="color:${STRATEGY_COLORS[s.strategy]}">${STRATEGY_NAMES[s.strategy]||s.strategy}</td>
+                    <td class="text-right ${parseFloat(s.avg_return)>=0?'text-green-400':'text-red-400'}">${parseFloat(s.avg_return).toFixed(2)}%</td>
+                    <td class="text-right text-red-400">${parseFloat(s.avg_maxdd).toFixed(2)}%</td>
+                    <td class="text-right ${parseFloat(s.avg_sharpe)>=0?'text-green-400':'text-red-400'}">${parseFloat(s.avg_sharpe).toFixed(2)}</td>
+                    <td class="text-right text-gray-500">${s.stock_count}</td>
+                </tr>
+            `).join('');
+        }
+
+        function applyFilter() {
+            const filterVal = document.getElementById('filter-strategy').value;
+            pageSize = parseInt(document.getElementById('page-size').value);
+            currentPage = 1;
+            
+            filteredData = allData.filter(d => 
+                filterVal === 'all' || d.strategy === filterVal
+            );
+            
+            if (sortField) {
+                filteredData.sort((a, b) => {
+                    const va = a[sortField] || 0;
+                    const vb = b[sortField] || 0;
+                    return sortDesc ? vb - va : va - vb;
+                });
+            }
+            
+            updatePagination();
+            renderTable();
+        }
+
+        function sortBy(field) {
+            if (sortField === field) {
+                sortDesc = !sortDesc;
+            } else {
+                sortField = field;
+                sortDesc = true;
+            }
+            applyFilter();
+        }
+
+        function updatePagination() {
+            const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+            document.getElementById('total-pages').textContent = totalPages;
+            document.getElementById('page-num').max = totalPages;
+            document.getElementById('page-num').value = currentPage;
+            document.getElementById('prev-page').disabled = currentPage === 1;
+            document.getElementById('next-page').disabled = currentPage === totalPages;
+        }
+
+        function changePage(delta) {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                updatePagination();
+                renderTable();
+            }
+        }
+
+        function goToPage() {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            let p = parseInt(document.getElementById('page-num').value) || 1;
+            if (p < 1) p = 1;
+            if (p > totalPages) p = totalPages;
+            currentPage = p;
+            updatePagination();
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('table-body');
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageData = filteredData.slice(start, end);
+            
+            const fragment = document.createDocumentFragment();
+            pageData.forEach(d => {
+                const ret = parseFloat(d.test_return_pct) || 0;
+                const color = ret >= 0 ? 'text-green-400' : 'text-red-400';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="py-1.5 text-gray-300">${d.symbol}</td>
+                    <td class="text-xs" style="color:${STRATEGY_COLORS[d.strategy]}">${STRATEGY_NAMES[d.strategy]||d.strategy}</td>
+                    <td class="text-right font-bold ${color}">${ret.toFixed(2)}%</td>
+                    <td class="text-right text-gray-400">${parseFloat(d.test_sharpe||0).toFixed(2)}</td>
+                    <td class="text-right text-red-400">${parseFloat(d.test_maxdd_pct||0).toFixed(2)}%</td>
+                    <td class="text-right text-gray-500">${d.test_trades||0}</td>
+                `;
+                fragment.appendChild(tr);
+            });
+            
+            tbody.innerHTML = '';
+            tbody.appendChild(fragment);
+            
+            document.getElementById('table-info').textContent = 
+                `显示 ${start + 1}-${Math.min(end, filteredData.length)} / ${filteredData.length} 条`;
+        }
+
+        function renderCharts() {
+            setTimeout(() => {
+                try {
+                    renderDistChart();
+                } catch (e) {
+                    console.error('图表渲染失败:', e);
+                }
+            }, 200);
+        }
+
+        function renderDistChart() {
+            if (typeof Chart === 'undefined') {
+                document.getElementById('dist-chart').parentElement.innerHTML =
+                    '<p class="text-gray-500 text-center py-4">图表库加载失败</p>';
+                return;
+            }
+            
+            const ctx = document.getElementById('dist-chart');
+            if (!ctx) return;
+            
+            if (window.chartDist) {
+                window.chartDist.destroy();
+                window.chartDist = null;
+            }
+            
+            const bins = { '<-5%':0, '-5~0%':0, '0~5%':0, '5~10%':0, '10~15%':0, '>15%':0 };
+            allData.forEach(d => {
+                const r = parseFloat(d.test_return_pct) || 0;
+                if (r < -5) bins['<-5%']++;
+                else if (r < 0) bins['-5~0%']++;
+                else if (r < 5) bins['0~5%']++;
+                else if (r < 10) bins['5~10%']++;
+                else if (r < 15) bins['10~15%']++;
+                else bins['>15%']++;
+            });
+            
+            window.chartDist = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(bins),
+                    datasets: [{
+                        label: '策略数量',
+                        data: Object.values(bins),
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    animation: false,
+                    aspectRatio: 2.5,
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            padding: 8,
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: { 
+                                color: '#6b7280',
+                                stepSize: 1
+                            }, 
+                            grid: { color: 'rgba(255,255,255,0.05)' } 
+                        },
+                        x: { 
+                            ticks: { color: '#6b7280' }, 
+                            grid: { display: false } 
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTop10() {
+            const top10 = [...allData].sort((a, b) => b.test_return_pct - a.test_return_pct).slice(0, 10);
+            const grid = document.getElementById('top10-grid');
+            grid.innerHTML = top10.map((d, i) => `
+                <div class="glass-card p-2 hover:bg-white/5 transition">
+                    <div class="text-[10px] text-gray-400 mb-1">#${i+1} ${d.symbol}</div>
+                    <div class="text-xs mb-1 truncate" style="color:${STRATEGY_COLORS[d.strategy]}">${STRATEGY_NAMES[d.strategy]||d.strategy}</div>
+                    <div class="text-lg font-bold ${d.test_return_pct>=0?'text-green-400':'text-red-400'}">${parseFloat(d.test_return_pct).toFixed(2)}%</div>
+                </div>
+            `).join('');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('filter-strategy').addEventListener('change', applyFilter);
+            document.getElementById('page-size').addEventListener('change', () => {
+                currentPage = 1;
+                applyFilter();
+            });
+            document.getElementById('prev-page').addEventListener('click', () => changePage(-1));
+            document.getElementById('next-page').addEventListener('click', () => changePage(1));
+            document.getElementById('page-num').addEventListener('change', goToPage);
+            
+            loadData();
+        });
+    </script>
+</body>
+</html>

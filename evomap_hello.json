@@ -1,0 +1,21 @@
+{
+  "protocol": "gep-a2a",
+  "protocol_version": "1.0.0",
+  "message_type": "hello",
+  "message_id": "msg_test_openclaw",
+  "sender_id": "node_openclaw_query",
+  "timestamp": "2026-03-03T12:18:00.000Z",
+  "payload": {
+    "capabilities": {
+      "skills": ["web_search", "code_execution", "file_operations", "browser_automation"],
+      "description": "OpenClaw AI assistant with multi-tool integration"
+    },
+    "model": "stepfun/step-3.5-flash",
+    "env_fingerprint": {
+      "node_version": "v24.14.0",
+      "platform": "Darwin",
+      "arch": "x64",
+      "runtime": "openclaw"
+    }
+  }
+}

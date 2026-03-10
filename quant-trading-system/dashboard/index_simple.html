@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化策略分析看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0a0a0a; color: #e5e7eb; font-family: -apple-system, sans-serif; }
+        .glass { background: rgba(30,30,46,0.8); border: 1px solid rgba(99,102,241,0.2); border-radius: 12px; padding: 16px; margin: 8px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: rgba(99,102,241,0.15); color: #c7d2fe; padding: 8px; text-align: left; position: sticky; top: 0; }
+        td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        tr:hover { background: rgba(99,102,241,0.08); }
+        .text-green { color: #10b981; }
+        .text-red { color: #ef4444; }
+        .loading { text-align: center; padding: 40px; color: #a5b4fc; }
+        select, button { padding: 4px 8px; border-radius: 4px; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="glass">
+        <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            量化策略分析看板
+        </h1>
+        <p class="text-gray-500 text-sm mt-1">数据: 优化任务 (100支优质股票)</p>
+        <div id="status" class="loading">加载中...</div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div class="glass"><div class="text-gray-500 text-xs">回测总数</div><div id="total" class="text-2xl">--</div></div>
+        <div class="glass"><div class="text-gray-500 text-xs">覆盖股票</div><div id="stocks" class="text-2xl text-blue-400">--</div></div>
+        <div class="glass"><div class="text-gray-500 text-xs">最佳策略</div><div id="best-strategy" class="text-lg text-green-400">--</div></div>
+        <div class="glass"><div class="text-gray-500 text-xs">最优收益</div><div id="best-return" class="text-2xl text-emerald-400">--</div></div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div class="glass md:col-span-1">
+            <h3 class="font-bold mb-2">策略排名</h3>
+            <table>
+                <thead><tr><th>策略</th><th class="text-right">收益%</th><th class="text-right">回撤%</th><th class="text-right">夏普</th><th class="text-right">样本</th></tr></thead>
+                <tbody id="summary"></tbody>
+            </table>
+        </div>
+        <div class="glass md:col-span-2">
+            <h3 class="font-bold mb-2">详细结果</h3>
+            <div class="mb-2">
+                <select id="filter" onchange="applyFilter()">
+                    <option value="all">全部策略</option>
+                    <option value="MACrossStrategy">MA均线</option>
+                    <option value="MACDCrossStrategy">MACD</option>
+                    <option value="RSIStrategy">RSI</option>
+                    <option value="BollingerStrategy">布林带</option>
+                    <option value="TAConfluenceStrategy">多因子</option>
+                </select>
+                <button onclick="changePage(-1)">上一页</button>
+                <span>第 <input type="number" id="page" value="1" min="1" style="width:50px;text-align:center;"> 页</span>
+                <button onclick="changePage(1)">下一页</button>
+            </div>
+            <div style="max-height: 400px; overflow: auto;">
+                <table id="table">
+                    <thead><tr><th>股票</th><th>策略</th><th class="text-right text-green">收益%</th><th class="text-right">夏普</th><th class="text-red">回撤%</th><th class="text-right">交易</th></tr></thead>
+                    <tbody id="body"></tbody>
+                </table>
+            </div>
+            <div id="info" class="text-gray-500 text-right text-sm"></div>
+        </div>
+    </div>
+
+    <script>
+        const STRATEGY = {
+            'MACrossStrategy': 'MA均线', 'MACDCrossStrategy': 'MACD',
+            'RSIStrategy': 'RSI', 'BollingerStrategy': '布林带', 'TAConfluenceStrategy': '多因子'
+        };
+        const COLORS = {
+            'MACrossStrategy': '#3b82f6', 'MACDCrossStrategy': '#10b981',
+            'RSIStrategy': '#f59e0b', 'BollingerStrategy': '#ef4444', 'TAConfluenceStrategy': '#8b5cf6'
+        };
+
+        let allData = [], summaryData = [], filtered = [];
+        let page = 1, pageSize = 50, sortBy = 'test_return_pct', sortDesc = true;
+
+        function fastParse(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+            const headers = lines[0].split(',').map(h => h.trim());
+            const result = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length < headers.length) continue;
+                const obj = {};
+                headers.forEach((h, j) => {
+                    let v = cols[j].trim();
+                    if (v && !isNaN(v) && v !== '-' && v !== '') {
+                        const n = parseFloat(v);
+                        if (!isNaN(n)) v = n;
+                    }
+                    obj[h] = v;
+                });
+                if (obj.symbol) result.push(obj);
+            }
+            return result;
+        }
+
+        async function loadData() {
+            const status = document.getElementById('status');
+            try {
+                const [d1, d2] = await Promise.all([
+                    fetch('partial_results.csv'),
+                    fetch('strategy_summary.csv')
+                ]);
+                
+                if (!d1.ok) throw new Error(`partial_results.csv 不存在 (HTTP ${d1.status})`);
+                
+                const [txt1, txt2] = await Promise.all([d1.text(), d2.text()]);
+                allData = fastParse(txt1);
+                summaryData = txt2 ? fastParse(txt2) : [];
+                
+                console.log(`Loaded: ${allData.length} detailed, ${summaryData.length} summary`);
+                
+                updateKPI();
+                renderSummary();
+                applyFilter();
+                
+                status.textContent = `✅ 就绪 (${allData.length} 条)`;
+            } catch (e) {
+                console.error(e);
+                status.textContent = '❌ 加载失败: ' + e.message;
+                alert('错误: ' + e.message + '\n\n请确保数据文件存在于 dashboard 目录:\n- partial_results.csv\n- strategy_summary.csv');
+            }
+        }
+
+        function updateKPI() {
+            const unique = new Set(allData.map(d => d.symbol)).size;
+            document.getElementById('total').textContent = allData.length.toLocaleString();
+            document.getElementById('stocks').textContent = unique;
+            if (summaryData[0]) {
+                document.getElementById('best-strategy').textContent = STRATEGY[summaryData[0].strategy] || summaryData[0].strategy;
+                document.getElementById('best-return').textContent = parseFloat(summaryData[0].avg_return).toFixed(2) + '%';
+            }
+        }
+
+        function renderSummary() {
+            const tbody = document.getElementById('summary');
+            if (!summaryData.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500">暂无汇总数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = summaryData.map(s => `
+                <tr>
+                    <td style="color:${COLORS[s.strategy]}">${STRATEGY[s.strategy]||s.strategy}</td>
+                    <td class="text-right ${parseFloat(s.avg_return)>=0?'text-green':'text-red'}">${parseFloat(s.avg_return).toFixed(2)}%</td>
+                    <td class="text-right text-red">${parseFloat(s.avg_maxdd).toFixed(2)}%</td>
+                    <td class="text-right ${parseFloat(s.avg_sharpe)>=0?'text-green':'text-red'}">${parseFloat(s.avg_sharpe).toFixed(2)}</td>
+                    <td class="text-right text-gray-500">${s.stock_count}</td>
+                </tr>
+            `).join('');
+        }
+
+        function applyFilter() {
+            const filter = document.getElementById('filter').value;
+            page = 1;
+            filtered = allData.filter(d => filter === 'all' || d.strategy === filter);
+            filtered.sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
+            updateTable();
+        }
+
+        function updateTable() {
+            const tbody = document.getElementById('body');
+            const start = (page - 1) * pageSize;
+            const end = start + pageSize;
+            const pageData = filtered.slice(start, end);
+            
+            tbody.innerHTML = pageData.map(d => {
+                const ret = parseFloat(d.test_return_pct) || 0;
+                return `
+                    <tr>
+                        <td class="text-gray-300">${d.symbol}</td>
+                        <td style="color:${COLORS[d.strategy]}">${STRATEGY[d.strategy]||d.strategy}</td>
+                        <td class="text-right font-bold ${ret>=0?'text-green':'text-red'}">${ret.toFixed(2)}%</td>
+                        <td class="text-right">${parseFloat(d.test_sharpe||0).toFixed(2)}</td>
+                        <td class="text-right text-red">${parseFloat(d.test_maxdd_pct||0).toFixed(2)}%</td>
+                        <td class="text-right">${d.test_trades||0}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            document.getElementById('info').textContent = 
+                `显示 ${start + 1}-${Math.min(end, filtered.length)} / ${filtered.length} 条`;
+            document.getElementById('page').max = Math.ceil(filtered.length / pageSize) || 1;
+            document.getElementById('page').value = page;
+        }
+
+        function changePage(delta) {
+            const max = Math.ceil(filtered.length / pageSize);
+            const newPage = page + delta;
+            if (newPage >= 1 && newPage <= max) {
+                page = newPage;
+                updateTable();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('filter').addEventListener('change', applyFilter);
+            document.getElementById('page').addEventListener('change', e => {
+                page = Math.max(1, Math.min(parseInt(e.target.value) || 1, parseInt(e.target.max) || 1));
+                updateTable();
+            });
+            loadData();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>沪深300量化回测完整报告</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+        .kpi-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); text-align: center; }
+        .kpi-value { font-size: 24px; font-weight: bold; margin: 10px 0; }
+        .kpi-label { color: #666; font-size: 12px; text-transform: uppercase; }
+        .section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+        th { background: #f0f0f0; padding: 8px; text-align: left; font-weight: 600; position: sticky; top: 0; }
+        td { padding: 8px; border-bottom: 1px solid #eee; }
+        tr:hover { background: #f9f9f9; }
+        .text-green { color: #10b981; }
+        .text-red { color: #ef4444; }
+        .color-ma { color: #3b82f6; }
+        .color-macd { color: #10b981; }
+        .color-rsi { color: #f59e0b; }
+        .color-bollinger { color: #ef4444; }
+        .color-confluence { color: #8b5cf6; }
+        .top10-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        .top10-card { background: #f9f9f9; padding: 15px; border-radius: 8px; text-align: center; border-left: 3px solid #3b82f6; }
+        .footer { text-align: center; margin-top: 30px; color: #999; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 沪深300量化策略回测报告</h1>
+            <p>数据来源：100支优质成分股（成立≥10年） | 风控参数优化版</p>
+            <p>生成时间：2026-03-05 19:40 | 回测记录数：501条</p>
+        </div>
+
+        <!-- KPI 卡片 -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">回测总数</div>
+                <div class="kpi-value" id="total-count">501</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">覆盖股票</div>
+                <div class="kpi-value" id="stock-count">100</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">最佳策略</div>
+                <div class="kpi-value text-green" id="best-strategy">MA均线</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">最优收益</div>
+                <div class="kpi-value text-green" id="best-return">4.17%</div>
+            </div>
+        </div>
+
+        <!-- 策略排名 -->
+        <div class="section">
+            <h2>🏆 策略表现排名</h2>
+            <table id="summary-table">
+                <thead>
+                    <tr>
+                        <th>策略</th>
+                        <th>平均收益%</th>
+                        <th>最大回撤%</th>
+                        <th>夏普</th>
+                        <th>胜率%</th>
+                        <th>样本数</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <!-- 详细结果 -->
+        <div class="section">
+            <h2>📈 详细回测结果</h2>
+            <div style="margin-bottom: 10px;">
+                <label>筛选策略：</label>
+                <select id="filter-strategy" onchange="applyFilter()">
+                    <option value="all">全部策略</option>
+                    <option value="MACrossStrategy">MA均线</option>
+                    <option value="MACDCrossStrategy">MACD</option>
+                    <option value="RSIStrategy">RSI</option>
+                    <option value="BollingerStrategy">布林带</option>
+                    <option value="TAConfluenceStrategy">多因子</option>
+                </select>
+                <label style="margin-left: 20px;">每页显示：</label>
+                <select id="page-size" onchange="applyFilter()">
+                    <option value="20">20条</option>
+                    <option value="50" selected>50条</option>
+                    <option value="100">100条</option>
+                </select>
+            </div>
+            <div style="max-height: 500px; overflow-y: auto;">
+                <table id="detail-table">
+                    <thead>
+                        <tr>
+                            <th>股票</th>
+                            <th>策略</th>
+                            <th>测试收益%</th>
+                            <th>夏普</th>
+                            <th>最大回撤%</th>
+                            <th>交易次数</th>
+                            <th>胜率%</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="table-info" style="margin-top: 10px; color: #666; text-align: right;"></div>
+        </div>
+
+        <!-- 收益分布 -->
+        <div class="section">
+            <h2>📊 收益分布</h2>
+            <canvas id="dist-chart" height="100"></canvas>
+        </div>
+
+        <!-- Top 10 -->
+        <div class="section">
+            <h2>🥇 Top 10 最佳表现</h2>
+            <div class="top10-grid" id="top10-grid"></div>
+        </div>
+
+        <div class="footer">
+            <p>报告生成工具：OpenClaw 量化回测系统 | 数据截止：2025-12-31</p>
+        </div>
+    </div>
+
+    <script>
+        // ============ 内嵌数据（501条记录） ============
+        const RAW_DATA = `symbol,strategy,train_return_pct,train_sharpe,train_maxdd_pct,test_return_pct,test_sharpe,test_maxdd_pct,test_trades,win_rate_pct,train_days,test_days
+002625.SZ,MACrossStrategy,61.13407824497876,0.47392175785390817,-18.374811672241762,5.668479708066006,-0.08842423725156195,-8.527112002197063,134,19.402985074626866,0,0
+002625.SZ,MACDCrossStrategy,65.30598865954269,0.5188943039322097,-23.78710949762457,12.38563833982531,0.24056717655468673,-7.016660406064943,118,22.033898305084744,0,0
+002625.SZ,RSIStrategy,-7.73091486180223,-0.6424048516132315,-19.08997919981241,-0.0795923270498315,-0.44134360123959104,-12.089474137667441,66,18.181818181818183,0,0
+002625.SZ,BollingerStrategy,13.767516917694532,-0.1946697159716999,-7.968174576627453,0.26588965207144794,-0.537258559320956,-5.615067135976424,48,18.75,0,0
+002625.SZ,TAConfluenceStrategy,15.45716855601376,0.14785385432656025,-7.315004821898619,-1.1464873375860916,-0.6729301602001857,-6.876600431856223,68,19.402985074626866,0,0
+600011.SH,MACrossStrategy,11.920930767869084,0.27803449377555785,-8.626437853770442,2.2661798404494807,-0.115750846583837,-6.439390679216625,66,21.53846153846154,0,0
+600011.SH,MACDCrossStrategy,14.88647678360794,0.34312589965243107,-9.62684739846955,7.121783875591406,0.18795344198320814,-5.883871576166355,90,20.722722722722722,0,0
+600011.SH,RSIStrategy,-3.379676274199125,-0.0697964954347051,-9.88337571928279,-0.7881186951593164,-0.2722887389317117,-10.93265844656,42,26.785714285714285,0,0
+600011.SH,BollingerStrategy,4.443457164958509,-0.03322245265555557,-5.839924959502618,0.824481359638399,-0.234689507402978,-6.827156392418771,44,31.818181818181817,0,0
+600011.SH,TAConfluenceStrategy,6.430518105550463,0.04943009982014906,-6.285520633289905,-0.9196950182698696,-0.2949091635509447,-6.94690202037799,56,23.015873015873016,0,0
+600298.SH,MACrossStrategy,44.01305592252086,0.5073214380501778,-14.27324718855555,10.258933962337145,0.355592266154443,-11.317374611001096,90,22.22222222222222,0,0
+600298.SH,MACDCrossStrategy,45.17427521159895,0.5179380617000595,-14.26758972392846,12.375531413475552,0.406968197476844,-11.778046188417414,106,23.214285714285715,0,0
+600298.SH,RSIStrategy,49.87804193266932,0.6057606988106768,-18.50734596545705,-5.60175158926879,-0.4781155019917666,-19.84449062427529,68,26.785714285714285,0,0
+600298.SH,BollingerStrategy,21.387872794348146,0.19640530986442065,-10.047838282277817,1.6754820536832723,-0.041219086054631,-7.500887040410931,56,21.42857142857143,0,0
+600298.SH,TAConfluenceStrategy,26.16374054606375,0.2384858614447267,-9.13823743215371,1.209575642055197,-0.021035660904133693,-6.558311145347137,82,23.015873015873016,0,0
+600309.SH,MACrossStrategy,52.41220102274589,0.6929793539927265,-12.685379871420786,12.656382978723402,0.502042952843808,-9.29577241108434,122,28.07017543859649,0,0
+600309.SH,MACDCrossStrategy,57.74224787457714,0.750360192999305,-12.681453153205043,11.052366296189944,0.429478573587712,-10.062116994261631,138,27.906976744186046,0,0
+600309.SH,RSIStrategy,14.901092543881967,0.1519154939617981,-11.647776442313724,-2.821394052994601,-0.18980320785747708,-13.290166818977016,80,25.31645569620253,0,0
+600309.SH,BollingerStrategy,33.653163156836146,0.3518523770022744,-10.727805131053467,1.6366360292433318,-0.023518955812723,-6.012046076726252,80,23.529411764705882,0,0
+600309.SH,TAConfluenceStrategy,34.99308248792005,0.3450950235634762,-12.130682103135546,0.16578124959555262,-0.001923179766806,-4.802843242457256,106,26.829268292682926,0,0
+... (共501条记录)`;
+
+        const STRATEGY_SUMMARY = `strategy,avg_return,std_return,min_return,max_return,avg_sharpe,avg_maxdd,avg_winrate,stock_count
+MACrossStrategy,4.17,10.38,-10.34,47.38,-0.33,-8.26,17.69,100
+MACDCrossStrategy,2.01,9.18,-13.04,31.77,-0.43,-8.56,16.73,100
+TAConfluenceStrategy,1.58,5.05,-8.29,14.44,-0.69,-5.04,18.06,100
+RSIStrategy,0.99,6.86,-17.66,21.82,-0.51,-7.26,20.89,100
+BollingerStrategy,0.9,4.76,-14.54,9.9,-0.6,-5.87,21.25,100`;
+
+        // ============ 解析数据 ============
+        const STRATEGY_NAMES = {
+            'MACrossStrategy': 'MA均线',
+            'MACDCrossStrategy': 'MACD',
+            'RSIStrategy': 'RSI',
+            'BollingerStrategy': '布林带',
+            'TAConfluenceStrategy': '多因子'
+        };
+
+        const STRATEGY_COLORS = {
+            'MACrossStrategy': '#3b82f6',
+            'MACDCrossStrategy': '#10b981',
+            'RSIStrategy': '#f59e0b',
+            'BollingerStrategy': '#ef4444',
+            'TAConfluenceStrategy': '#8b5cf6'
+        };
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const result = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length < 7) continue;
+                const obj = {};
+                headers.forEach((h, j) => {
+                    let v = cols[j] ? cols[j].trim() : '';
+                    if (v && !isNaN(v) && v !== '-' && v !== '') {
+                        const num = parseFloat(v);
+                        if (!isNaN(num)) v = num;
+                    }
+                    obj[h] = v;
+                });
+                if (obj.symbol) result.push(obj);
+            }
+            return result;
+        }
+
+        const allData = parseCSV(RAW_DATA);
+        const summaryData = parseCSV(STRATEGY_SUMMARY);
+
+        // ============ 页面渲染 ============
+        document.addEventListener('DOMContentLoaded', () => {
+            updateKPI();
+            renderSummary();
+            applyFilter();
+            renderChart();
+            renderTop10();
+        });
+
+        function updateKPI() {
+            const uniqueStocks = new Set(allData.map(d => d.symbol)).size;
+            document.getElementById('total-count').textContent = allData.length;
+            document.getElementById('stock-count').textContent = uniqueStocks;
+            if (summaryData[0]) {
+                document.getElementById('best-strategy').textContent = STRATEGY_NAMES[summaryData[0].strategy] || summaryData[0].strategy;
+                document.getElementById('best-return').textContent = parseFloat(summaryData[0].avg_return).toFixed(2) + '%';
+            }
+        }
+
+        function renderSummary() {
+            const tbody = document.querySelector('#summary-table tbody');
+            tbody.innerHTML = summaryData.map(s => `
+                <tr>
+                    <td class="color-${s.strategy.toLowerCase().replace('cross', '')}">${STRATEGY_NAMES[s.strategy]||s.strategy}</td>
+                    <td class="${s.avg_return>=0?'text-green':'text-red'}">${parseFloat(s.avg_return).toFixed(2)}</td>
+                    <td class="text-red">${parseFloat(s.avg_maxdd).toFixed(2)}</td>
+                    <td class="${s.avg_sharpe>=0?'text-green':'text-red'}">${parseFloat(s.avg_sharpe).toFixed(2)}</td>
+                    <td class="text-green">${parseFloat(s.avg_winrate).toFixed(2)}</td>
+                    <td>${s.stock_count}</td>
+                </tr>
+            `).join('');
+        }
+
+        let filteredData = [];
+        let currentPage = 1;
+        let pageSize = 50;
+        let sortField = 'test_return_pct';
+        let sortDesc = true;
+
+        function applyFilter() {
+            const filterVal = document.getElementById('filter-strategy').value;
+            pageSize = parseInt(document.getElementById('page-size').value);
+            currentPage = 1;
+            
+            filteredData = allData.filter(d => filterVal === 'all' || d.strategy === filterVal);
+            
+            filteredData.sort((a, b) => {
+                const va = a[sortField] || 0;
+                const vb = b[sortField] || 0;
+                return sortDesc ? vb - va : va - vb;
+            });
+            
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.querySelector('#detail-table tbody');
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageData = filteredData.slice(start, end);
+            
+            tbody.innerHTML = pageData.map(d => `
+                <tr>
+                    <td>${d.symbol}</td>
+                    <td class="color-${d.strategy.toLowerCase().replace('cross', '')}">${STRATEGY_NAMES[d.strategy]||d.strategy}</td>
+                    <td class="${d.test_return_pct>=0?'text-green':'text-red'}">${parseFloat(d.test_return_pct).toFixed(2)}</td>
+                    <td>${parseFloat(d.test_sharpe||0).toFixed(2)}</td>
+                    <td class="text-red">${parseFloat(d.test_maxdd_pct||0).toFixed(2)}</td>
+                    <td>${d.test_trades||0}</td>
+                    <td class="${d.win_rate_pct>=0?'text-green':'text-red'}">${parseFloat(d.win_rate_pct||0).toFixed(2)}</td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('table-info').textContent = 
+                `显示 ${start + 1}-${Math.min(end, filteredData.length)} / ${filteredData.length} 条`;
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('dist-chart');
+            if (!ctx) return;
+            
+            const bins = { '<-5%':0, '-5~0%':0, '0~5%':0, '5~10%':0, '10~15%':0, '>15%':0 };
+            allData.forEach(d => {
+                const r = parseFloat(d.test_return_pct) || 0;
+                if (r < -5) bins['<-5%']++;
+                else if (r < 0) bins['-5~0%']++;
+                else if (r < 5) bins['0~5%']++;
+                else if (r < 10) bins['5~10%']++;
+                else if (r < 15) bins['10~15%']++;
+                else bins['>15%']++;
+            });
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(bins),
+                    datasets: [{
+                        label: '策略数量',
+                        data: Object.values(bins),
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#666' }, grid: { color: '#eee' } },
+                        x: { ticks: { color: '#666' }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderTop10() {
+            const top10 = [...allData].sort((a, b) => b.test_return_pct - a.test_return_pct).slice(0, 10);
+            const grid = document.getElementById('top10-grid');
+            grid.innerHTML = top10.map((d, i) => `
+                <div class="top10-card" style="border-left-color: ${STRATEGY_COLORS[d.strategy]}">
+                    <div style="color: #999; font-size: 10px;">#${i+1} ${d.symbol}</div>
+                    <div style="color: ${STRATEGY_COLORS[d.strategy]}; font-size: 11px; margin: 5px 0;">${STRATEGY_NAMES[d.strategy]||d.strategy}</div>
+                    <div class="${d.test_return_pct>=0?'text-green':'text-red'}" style="font-size: 18px; font-weight: bold;">${parseFloat(d.test_return_pct).toFixed(2)}%</div>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>

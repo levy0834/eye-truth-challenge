@@ -1,0 +1,307 @@
+    <script>
+        const STRATEGY_NAMES = {
+            'MACrossStrategy': 'MA均线',
+            'MACDCrossStrategy': 'MACD',
+            'RSIStrategy': 'RSI',
+            'BollingerStrategy': '布林带',
+            'TAConfluenceStrategy': '多因子'
+        };
+        
+        const STRATEGY_COLORS = {
+            'MACrossStrategy': '#3b82f6',
+            'MACDCrossStrategy': '#10b981',
+            'RSIStrategy': '#f59e0b',
+            'BollingerStrategy': '#ef4444',
+            'TAConfluenceStrategy': '#8b5cf6'
+        };
+
+        let allData = [];
+        let summaryData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        let pageSize = 50;
+        let sortField = 'test_return_pct';
+        let sortDesc = true;
+
+        // 快速CSV解析
+        function fastParse(text) {
+            const t0 = performance.now();
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            const len = headers.length;
+            const result = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',');
+                if (cols.length < 7) continue;
+                
+                const obj = {};
+                for (let j = 0; j < len; j++) {
+                    let val = (cols[j] || '').trim();
+                    if (val && !isNaN(val) && val !== '-' && val !== '') {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) val = num;
+                    }
+                    obj[headers[j]] = val;
+                }
+                if (obj.symbol) result.push(obj);
+            }
+            
+            console.log(`✅ 解析 ${result.length} 行, ${(performance.now() - t0).toFixed(0)}ms`);
+            return result;
+        }
+
+        async function loadData() {
+            const status = document.getElementById('status');
+            const errorArea = document.getElementById('error-area');
+            document.getElementById('loading-bar').style.display = 'block';
+            status.textContent = '加载中...';
+            errorArea.style.display = 'none';
+            
+            try {
+                const t0 = performance.now();
+                
+                // 加载当前目录下的数据文件
+                const dataUrl = 'partial_results.csv';
+                const summaryUrl = 'strategy_summary.csv';
+                
+                const [d1, d2] = await Promise.all([
+                    fetch(dataUrl),
+                    fetch(summaryUrl)
+                ]);
+                
+                if (!d1.ok) {
+                    throw new Error(`数据文件不存在: ${dataUrl} (HTTP ${d1.status})`);
+                }
+                if (!d2.ok) {
+                    console.warn('汇总文件不存在，将继续加载详细数据');
+                }
+                
+                const [txt1, txt2] = await Promise.all([d1.text(), d2.text()]);
+                allData = fastParse(txt1);
+                summaryData = txt2 ? fastParse(txt2) : [];
+                
+                console.log(`📦 总数据: ${allData.length} 条`);
+                
+                applyFilter();
+                updateKPI();
+                renderSummary();
+                renderCharts();
+                renderTop10();
+                
+                status.textContent = `✅ 就绪 (${allData.length})`;
+                document.getElementById('update-time').textContent = new Date().toLocaleTimeString('zh-CN');
+                
+            } catch (e) {
+                console.error(e);
+                status.textContent = '❌ 失败';
+                errorArea.style.display = 'block';
+                errorArea.innerHTML = `<div class="text-red-400 text-xs mt-2">加载失败: ${e.message}</div>`;
+            } finally {
+                setTimeout(() => {
+                    document.getElementById('loading-bar').style.display = 'none';
+                }, 500);
+            }
+        }
+
+        function updateKPI() {
+            const uniqueStocks = new Set(allData.map(d => d.symbol)).size;
+            document.getElementById('total-count').textContent = allData.length.toLocaleString();
+            document.getElementById('stock-count').textContent = uniqueStocks;
+            if (summaryData[0]) {
+                document.getElementById('best-strategy').textContent = STRATEGY_NAMES[summaryData[0].strategy] || summaryData[0].strategy;
+                document.getElementById('best-return').textContent = parseFloat(summaryData[0].avg_return).toFixed(2) + '%';
+            }
+        }
+
+        function renderSummary() {
+            const tbody = document.getElementById('summary-body');
+            tbody.innerHTML = summaryData.map(s => `
+                <tr class="border-b border-gray-800">
+                    <td class="py-2" style="color:${STRATEGY_COLORS[s.strategy]}">${STRATEGY_NAMES[s.strategy]||s.strategy}</td>
+                    <td class="text-right ${s.avg_return>=0?'text-green-400':'text-red-400'}">${parseFloat(s.avg_return).toFixed(2)}%</td>
+                    <td class="text-right text-red-400">${parseFloat(s.avg_maxdd).toFixed(2)}%</td>
+                    <td class="text-right ${s.avg_sharpe>=0?'text-green-400':'text-red-400'}">${parseFloat(s.avg_sharpe).toFixed(2)}</td>
+                    <td class="text-right text-gray-500">${s.stock_count}</td>
+                </tr>
+            `).join('');
+        }
+
+        function applyFilter() {
+            const filterVal = document.getElementById('filter-strategy').value;
+            pageSize = parseInt(document.getElementById('page-size').value);
+            currentPage = 1;
+            
+            filteredData = allData.filter(d => 
+                filterVal === 'all' || d.strategy === filterVal
+            );
+            
+            if (sortField) {
+                filteredData.sort((a, b) => {
+                    const va = a[sortField] || 0;
+                    const vb = b[sortField] || 0;
+                    return sortDesc ? vb - va : va - vb;
+                });
+            }
+            
+            updatePagination();
+            renderTable();
+        }
+
+        function sortBy(field) {
+            if (sortField === field) {
+                sortDesc = !sortDesc;
+            } else {
+                sortField = field;
+                sortDesc = true;
+            }
+            applyFilter();
+        }
+
+        function updatePagination() {
+            const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+            document.getElementById('total-pages').textContent = totalPages;
+            document.getElementById('page-num').max = totalPages;
+            document.getElementById('page-num').value = currentPage;
+            document.getElementById('prev-page').disabled = currentPage === 1;
+            document.getElementById('next-page').disabled = currentPage === totalPages;
+        }
+
+        function changePage(delta) {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                updatePagination();
+                renderTable();
+            }
+        }
+
+        function goToPage() {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            let p = parseInt(document.getElementById('page-num').value) || 1;
+            if (p < 1) p = 1;
+            if (p > totalPages) p = totalPages;
+            currentPage = p;
+            updatePagination();
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('table-body');
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageData = filteredData.slice(start, end);
+            
+            const fragment = document.createDocumentFragment();
+            pageData.forEach(d => {
+                const ret = parseFloat(d.test_return_pct) || 0;
+                const color = ret >= 0 ? 'text-green-400' : 'text-red-400';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="py-1.5 text-gray-300">${d.symbol}</td>
+                    <td class="text-xs" style="color:${STRATEGY_COLORS[d.strategy]}">${STRATEGY_NAMES[d.strategy]||d.strategy}</td>
+                    <td class="text-right font-bold ${color}">${ret.toFixed(2)}%</td>
+                    <td class="text-right text-gray-400">${parseFloat(d.test_sharpe||0).toFixed(2)}</td>
+                    <td class="text-right text-red-400">${parseFloat(d.test_maxdd_pct||0).toFixed(2)}%</td>
+                    <td class="text-right text-gray-500">${d.test_trades||0}</td>
+                `;
+                fragment.appendChild(tr);
+            });
+            
+            tbody.innerHTML = '';
+            tbody.appendChild(fragment);
+            
+            document.getElementById('table-info').textContent = 
+                `显示 ${start + 1}-${Math.min(end, filteredData.length)} / ${filteredData.length} 条`;
+        }
+
+        function renderCharts() {
+            // 延迟渲染，避免阻塞
+            setTimeout(() => {
+                try {
+                    renderDistChart();
+                } catch (e) {
+                    console.error('图表渲染失败:', e);
+                }
+            }, 200);
+        }
+
+        function renderDistChart() {
+            if (typeof Chart === 'undefined') {
+                document.getElementById('dist-chart').parentElement.innerHTML = 
+                    '<p class="text-gray-500 text-center py-4">图表库加载失败</p>';
+                return;
+            }
+            
+            const ctx = document.getElementById('dist-chart');
+            if (!ctx) return;
+            
+            if (window.chartDist) {
+                window.chartDist.destroy();
+                window.chartDist = null;
+            }
+            
+            const bins = { '<-5%':0, '-5~0%':0, '0~5%':0, '5~10%':0, '10~15%':0, '>15%':0 };
+            allData.forEach(d => {
+                const r = parseFloat(d.test_return_pct) || 0;
+                if (r < -5) bins['<-5%']++;
+                else if (r < 0) bins['-5~0%']++;
+                else if (r < 5) bins['0~5%']++;
+                else if (r < 10) bins['5~10%']++;
+                else if (r < 15) bins['10~15%']++;
+                else bins['>15%']++;
+            });
+            
+            window.chartDist = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(bins),
+                    datasets: [{
+                        label: '策略数量',
+                        data: Object.values(bins),
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#6b7280' }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderTop10() {
+            const top10 = [...allData].sort((a, b) => b.test_return_pct - a.test_return_pct).slice(0, 10);
+            const grid = document.getElementById('top10-grid');
+            grid.innerHTML = top10.map((d, i) => `
+                <div class="glass-card p-2 hover:bg-white/5 transition">
+                    <div class="text-[10px] text-gray-400 mb-1">#${i+1} ${d.symbol}</div>
+                    <div class="text-xs mb-1 truncate" style="color:${STRATEGY_COLORS[d.strategy]}">${STRATEGY_NAMES[d.strategy]||d.strategy}</div>
+                    <div class="text-lg font-bold ${d.test_return_pct>=0?'text-green-400':'text-red-400'}">${parseFloat(d.test_return_pct).toFixed(2)}%</div>
+                </div>
+            `).join('');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('filter-strategy').addEventListener('change', applyFilter);
+            document.getElementById('page-size').addEventListener('change', () => {
+                currentPage = 1;
+                applyFilter();
+            });
+            document.getElementById('prev-page').addEventListener('click', () => changePage(-1));
+            document.getElementById('next-page').addEventListener('click', () => changePage(1));
+            document.getElementById('page-num').addEventListener('change', goToPage);
+            
+            loadData();
+        });
+    </script>
